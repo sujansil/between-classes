@@ -1,0 +1,115 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+'use strict';
+const $=id=>document.getElementById(id);
+const DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const CAT={class:'Class',study:'Academics',pio:'Pioneers',hobby:'Hobby',rest:'Rest',free:'Free time'};
+const state={blocks:[],filter:'all',page:'week',editing:null,user:null};
+const configured=/^https:\/\/.+\.supabase\.co$/.test(SUPABASE_URL) && SUPABASE_ANON_KEY.length>20;
+const db=configured?createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
+function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e;}
+function duration(b){const [sh,sm]=b.start.split(':').map(Number),[eh,em]=b.end.split(':').map(Number);return (eh*60+em-sh*60-sm)/60;}
+function nice(n){return Number.isInteger(n)?String(n):n.toFixed(1);}
+function todayDay(){return (new Date().getDay()+6)%7;}
+function mondayISO(){const d=new Date();d.setDate(d.getDate()-todayDay());return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function shortTime(t){const [h,m]=t.split(':').map(Number);return `${h%12||12}${m?':'+String(m).padStart(2,'0'):''}${h>=12?'p':'a'}`;}
+function timeRange(b){return `${shortTime(b.start)} – ${shortTime(b.end)}`;}
+function mapRow(row){return {id:row.id,title:row.title,day:row.day,start:row.start_time.slice(0,5),end:row.end_time.slice(0,5),category:row.category,completed:row.completed_week===mondayISO()};}
+function parseMutation(input){const out={};for(const k of ['title','day','category'])if(k in input)out[k]=input[k];if('start' in input)out.start_time=input.start;if('end' in input)out.end_time=input.end;if('completed' in input)out.completed_week=input.completed?mondayISO():null;return out;}
+function validateBlock(x){if(!x.title?.trim()||x.title.trim().length>90)throw Error('Enter a title up to 90 characters.');if(!Number.isInteger(x.day)||x.day<0||x.day>6)throw Error('Choose a day.');if(!Object.keys(CAT).includes(x.category))throw Error('Choose a category.');if(!/^\d{2}:\d{2}$/.test(x.start)||!/^\d{2}:\d{2}$/.test(x.end)||x.start>=x.end)throw Error('End time must be later than start time.');}
+async function requireUser(){const {data,error}=await db.auth.getUser();if(error||!data.user){showLogin();throw Error('Session expired. Please sign in.');}state.user=data.user;return data.user;}
+async function request(path,opts={}){
+  if(!db)throw Error('Configure your Supabase URL and publishable key in config.js first.');
+  const user=await requireUser(); const method=opts.method||'GET';const payload=opts.body?JSON.parse(opts.body):{};
+  if(path==='/api/blocks'&&method==='GET'){
+    const {data,error}=await db.from('planner_blocks').select('id,title,day,start_time,end_time,category,completed_week').eq('user_id',user.id).order('day').order('start_time');
+    if(error)throw Error(error.message);return {blocks:data.map(mapRow)};
+  }
+  if(path==='/api/blocks'&&method==='POST'){
+    validateBlock(payload);const {error}=await db.from('planner_blocks').insert({...parseMutation(payload),title:payload.title.trim(),user_id:user.id});
+    if(error)throw Error(error.message);return {ok:true};
+  }
+  const m=path.match(/^\/api\/blocks\/(\d+)$/);
+  if(m&&method==='PATCH'){
+    if(!('completed' in payload))validateBlock(payload);
+    const {data,error}=await db.from('planner_blocks').update(parseMutation(payload)).eq('id',Number(m[1])).eq('user_id',user.id).select('id');
+    if(error)throw Error(error.message);if(!data.length)throw Error('Block not found or access denied.');return {ok:true};
+  }
+  if(m&&method==='DELETE'){
+    const {data,error}=await db.from('planner_blocks').delete().eq('id',Number(m[1])).eq('user_id',user.id).select('id');
+    if(error)throw Error(error.message);if(!data.length)throw Error('Block not found or access denied.');return {ok:true};
+  }
+  if(path==='/api/export')return {version:1,exported_at:new Date().toISOString(),blocks:state.blocks};
+  throw Error('Unsupported action');
+}
+function showLogin(){$('app').classList.add('hidden');$('login').classList.remove('hidden');$('email').focus();}
+async function showApp(){
+  await requireUser();
+  $('login').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  await refresh();
+}
+async function refresh(){const result=await request('/api/blocks');state.blocks=result.blocks;render();}
+const STARTER=[[0,"09:15","10:45","Digital Design","class"],[0,"11:00","12:30","Calculus","class"],[0,"14:00","15:30","Linear Algebra","class"],[1,"09:15","10:45","C Programming","class"],[1,"11:00","12:30","Economics","class"],[1,"14:00","15:30","Calculus","class"],[1,"15:45","17:15","Physical Education","class"],[2,"09:15","10:45","Digital Design","class"],[2,"14:00","15:30","Linear Algebra","class"],[2,"16:30","18:00","Linear Algebra Tutorial","class"],[3,"14:00","15:30","Python Programming","class"],[3,"15:45","17:15","Physical Education","class"],[4,"11:00","12:30","Calculus Tutorial","class"],[4,"14:00","15:30","Digital Design Tutorial","class"],[4,"15:45","17:15","Physical Education","class"],[5,"09:00","10:30","Physical Education (TT)","class"],[5,"11:00","12:30","C Programming","class"],[5,"14:00","15:30","Python Programming","class"],[0,"16:30","18:00","Calculus / Linear Algebra review","study"],[0,"18:00","19:00","Codeforces — practice","hobby"],[0,"20:00","21:00","Digital Design self-study","study"],[0,"21:00","22:00","Unsolved Monday — publish / coordinate","pio"],[1,"18:00","19:30","Programming / assignments","study"],[1,"20:30","21:30","Economics / Calculus review","study"],[2,"11:00","12:30","Digital Design / pending work","study"],[2,"19:00","20:00","Linear Algebra recap","study"],[2,"20:00","21:30","Codeforces — practice","hobby"],[3,"09:30","11:00","Deep work / assignments","study"],[3,"11:00","12:30","Pioneers — research / production","pio"],[3,"18:15","19:15","Python revision","study"],[3,"20:15","21:45","Codeforces / try a new hobby","hobby"],[4,"09:30","10:30","Tutorial prep","study"],[4,"18:15","19:45","Assignments / revision","study"],[4,"20:45","21:45","Pioneers — close submissions / review","pio"],[5,"16:30","18:00","Weekly academic backlog","study"],[5,"18:00","19:00","Pioneers — solution handoff","pio"],[5,"20:00","21:00","Weekly revision","study"],[6,"10:00","11:30","Focused academic catch-up","study"],[6,"11:30","13:00","Pioneers — prepare / review","pio"],[6,"14:30","16:00","Codeforces / new hobby","hobby"],[6,"18:00","19:00","Upcoming-week academic prep","study"],[0,"08:00","09:00","Breakfast and morning routine","rest"],[0,"12:30","14:00","Lunch and downtime","rest"],[0,"15:30","16:30","Rest / friends / snack","rest"],[0,"19:00","20:00","Dinner and break","rest"],[0,"22:00","23:30","Free time / winding down","free"],[1,"08:00","09:00","Breakfast and morning routine","rest"],[1,"12:30","14:00","Lunch and downtime","rest"],[1,"17:15","18:00","Recovery and snack","rest"],[1,"19:30","20:30","Dinner and break","rest"],[1,"21:30","23:30","Friends / entertainment / free time","free"],[2,"08:00","09:00","Breakfast and morning routine","rest"],[2,"12:30","14:00","Lunch and downtime","rest"],[2,"15:30","16:30","Rest and snack","rest"],[2,"18:00","19:00","Dinner and recovery","rest"],[2,"21:30","23:30","Free time","free"],[3,"08:30","09:30","Breakfast and easy morning","rest"],[3,"12:30","14:00","Lunch and downtime","rest"],[3,"17:15","18:15","Rest and snack","rest"],[3,"19:15","20:15","Dinner","rest"],[3,"21:45","23:30","Free time","free"],[4,"08:30","09:30","Breakfast and morning routine","rest"],[4,"12:30","14:00","Lunch and downtime","rest"],[4,"17:15","18:15","Recovery and break","rest"],[4,"19:45","20:45","Dinner","rest"],[4,"21:45","23:30","Social evening / free time","free"],[5,"08:00","08:45","Breakfast and routine","rest"],[5,"12:30","14:00","Lunch and downtime","rest"],[5,"15:30","16:30","Rest and snack","rest"],[5,"19:00","20:00","Dinner and break","rest"],[5,"21:00","23:30","Friends / games / free time","free"],[6,"09:00","10:00","Relaxed breakfast","rest"],[6,"13:00","14:30","Lunch and downtime","rest"],[6,"16:00","18:00","Unstructured free time / outing","free"],[6,"19:00","20:00","Dinner","rest"],[6,"20:00","21:00","Optional Pioneers prep / handoff","pio"],[6,"21:00","23:30","Rest and friends","free"]];
+// Changes once per local calendar day, not on each reload or page switch.
+// No database calls, timers, or external services required.
+const DAILY_NOTES = [
+  ["Being busy isn't", "the same as growing.", "Make space for what helps you grow, not just what keeps you occupied."],
+  ["You can care deeply", "without doing everything.", "Good work deserves attention. So do sleep, friends, and the rest of your life."],
+  ["Small steps count", "even on slow days.", "Consistency will take you further than one perfect afternoon."],
+  ["Your free time", "belongs to you.", "A hobby doesn't have to become another responsibility."],
+  ["Make something good.", "Then let it go.", "Not every detail needs one more revision."],
+  ["Progress is quieter", "than you think.", "You don't need to prove your effort every single day."],
+  ["Leave a little room", "for the unexpected.", "The best parts of college may not fit neatly into a calendar."],
+  ["Study with purpose.", "Rest without guilt.", "Both are necessary parts of a sustainable week."],
+  ["You are allowed", "to change your mind.", "Trying something new is not abandoning something old."],
+  ["A finished task", "isn't your whole day.", "Once the work is done, be present for what's next."],
+  ["Build your skills,", "not just your schedule.", "Use the plan as a guide, never as a measure of your worth."],
+  ["Not every hour", "needs an outcome.", "Time with friends and time alone both count."],
+  ["Keep the ambition.", "Lose the urgency.", "A sustainable pace gives you more chances to do meaningful work."],
+  ["You're more than", "your to-do list.", "A good week makes room for the person outside the projects."],
+];
+function updateDailyNote(){
+  const date = new Date();
+  // Local date, stable across devices in the same timezone.
+  const dayNumber = Math.floor(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())/86400000);
+  const [first,emphasis,description] = DAILY_NOTES[((dayNumber % DAILY_NOTES.length)+DAILY_NOTES.length)%DAILY_NOTES.length];
+  $('daily-note-title').textContent = first;
+  $('daily-note-emphasis').textContent = emphasis;
+  $('daily-note-description').textContent = description;
+  $('daily-sidebar-note').textContent = `${first} ${emphasis}`;
+}
+function hours(cat){return state.blocks.filter(b=>b.category===cat).reduce((a,b)=>a+duration(b),0);}
+function updateStats(){$('study-hours').innerHTML=`${nice(hours('study'))} <small>hrs</small>`;$('pio-hours').innerHTML=`${nice(hours('pio'))} <small>hrs</small>`;$('hobby-hours').innerHTML=`${nice(hours('hobby'))} <small>hrs</small>`;const items=state.blocks.filter(b=>b.category!=='class'&&b.category!=='rest'&&b.category!=='free');const pct=items.length?Math.round(items.filter(b=>b.completed).length/items.length*100):0;$('progress-percent').innerHTML=`${pct}<small>%</small>`;$('progress-fill').style.width=`${pct}%`;}
+function render(){updateDailyNote();updateStats();const date=new Date();$('today-label').textContent=date.toLocaleDateString('en-GB',{weekday:'long',month:'short',day:'2-digit'}).toUpperCase();document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.page===state.page));document.querySelectorAll('.filter').forEach(b=>b.classList.toggle('selected',b.dataset.filter===state.filter));$('filter-buttons').classList.toggle('hidden',state.page==='focus');$('add-btn').classList.toggle('hidden',state.page==='focus');$('page-title').innerHTML=state.page==='week'?'A week with<br><em>room to breathe.</em>':state.page==='today'?'One day<br><em>at a time.</em>':'Progress, not<br><em>perfection.</em>';$('page-subtitle').textContent=state.page==='focus'?'A clearer view of where your time is going.':state.page==='today'?'Today has room for the things that matter.':'A little structure, without turning your life into another assignment.';$('crumb-page').textContent=state.page==='week'?'YOUR WEEK':state.page==='today'?'TODAY':'FOCUS';$('schedule-heading').innerHTML=state.page==='week'?'Your week <span class="muted">/ at a glance</span>':state.page==='today'?'Today <span class="muted">/ your plan</span>':'Your progress <span class="muted">/ at a glance</span>';const grid=$('week-grid');grid.replaceChildren();grid.style.display='';grid.classList.toggle('focus-shell',state.page==='focus');if(state.page==='focus')renderFocus(grid);else{const days=state.page==='today'?[todayDay()]:[0,1,2,3,4,5,6];for(const d of days)grid.appendChild(renderDay(d));}const shown=grid.querySelectorAll('.block').length;$('empty').classList.toggle('hidden',shown!==0||state.page==='focus');$('starter-btn').classList.toggle('hidden',state.blocks.length!==0);}
+function renderDay(day){const col=el('div','day-column'+(todayDay()===day?' today-day':''));const head=el('div','day-header');head.appendChild(el('span','day-name',DAYS[day]));head.appendChild(el('span',todayDay()===day?'today-tag':'day-label',todayDay()===day?'TODAY':DAYS[day].slice(0,3).toUpperCase()));col.appendChild(head);const body=el('div','day-body');const blocks=state.blocks.filter(b=>b.day===day&&(state.filter==='all'||b.category===state.filter));for(const b of blocks){const btn=el('button',`block ${b.category}${b.completed?' done':''}`);btn.type='button';btn.setAttribute('aria-label',`${b.title}, ${timeRange(b)}, edit block`);btn.appendChild(el('span','block-time',timeRange(b)));btn.appendChild(el('span','block-title',b.title));btn.appendChild(el('span','block-cat',CAT[b.category]));btn.addEventListener('click',()=>openBlock(b));if(b.category!=='class'){const check=el('span',`block-check ${b.completed?'checked':''}`,b.completed?'✓':'');check.setAttribute('role','button');check.setAttribute('aria-label',b.completed?'Mark incomplete':'Mark complete');check.addEventListener('click',async ev=>{ev.stopPropagation();try{await request(`/api/blocks/${b.id}`,{method:'PATCH',body:JSON.stringify({completed:!Boolean(b.completed)})});await refresh();}catch(err){toast(err.message);}});btn.appendChild(check);}body.appendChild(btn);}const add=el('button','day-add','+ Add something');add.addEventListener('click',()=>openBlock(null,day));body.appendChild(add);col.appendChild(body);return col;}
+function renderFocus(grid){const div=el('div','');div.style.width='100%';const boxes=el('div','focus-layout');for(const [cat,title] of [['study','Study hours'],['pio','Pioneers hours'],['hobby','Hobby hours']]){const item=el('div','focus-pill');item.appendChild(el('strong','',`${nice(hours(cat))}h`));item.appendChild(el('span','',title));boxes.appendChild(item);}div.appendChild(boxes);const list=el('div','focus-list');list.appendChild(el('h3','','Personal blocks'));for(const b of state.blocks.filter(x=>!['class','rest','free'].includes(x.category))){const row=el('div',`focus-item${b.completed?' done':''}`);const btn=el('button','',b.completed?'✓':'○');btn.addEventListener('click',async()=>{try{await request(`/api/blocks/${b.id}`,{method:'PATCH',body:JSON.stringify({completed:!Boolean(b.completed)})});await refresh();}catch(err){toast(err.message);}});row.appendChild(btn);const name=el('span','',b.title);name.style.cursor='pointer';name.addEventListener('click',()=>openBlock(b));row.appendChild(name);row.appendChild(el('small','',`${DAYS[b.day]} · ${timeRange(b)}`));list.appendChild(row);}div.appendChild(list);grid.appendChild(div);grid.style.display='block';}
+function openBlock(block,day){state.editing=block?.id??null;$('modal-title').textContent=block?'Edit time block':'Add a time block';$('block-title').value=block?.title??'';$('block-day').value=String(block?.day??day??todayDay());$('block-start').value=block?.start??'18:00';$('block-end').value=block?.end??'19:00';$('block-category').value=block?.category??'study';$('delete-block').classList.toggle('hidden',!block);$('block-error').textContent='';$('modal-backdrop').classList.remove('hidden');$('block-title').focus();}
+function closeBlock(){$('modal-backdrop').classList.add('hidden');state.editing=null;}
+function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidden');clearTimeout(toast.t);toast.t=setTimeout(()=>$('toast').classList.add('hidden'),3600);}
+
+$('login-form').addEventListener('submit',async ev=>{ev.preventDefault();$('login-error').textContent='';const button=$('login-form').querySelector('[type=submit]');button.disabled=true;try{
+  if(!db)throw Error('Site is not configured: edit config.js before deploying.');
+  const {data,error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
+  if(error)throw error;state.user=data.user;$('password').value='';await showApp();
+}catch(err){$('login-error').textContent=err.message;}finally{button.disabled=false;}});
+$('show-pass').addEventListener('click',()=>{$('password').type=$('password').type==='password'?'text':'password';});
+async function logout(){try{if(db)await db.auth.signOut();}catch(err){toast(err.message);}state.user=null;state.blocks=[];showLogin();}
+$('logout').addEventListener('click',logout);
+$('mobile-logout').addEventListener('click',logout);
+document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{state.page=btn.dataset.page;render();window.scrollTo({top:0,behavior:'smooth'});}));
+document.querySelectorAll('.filter').forEach(btn=>btn.addEventListener('click',()=>{state.filter=btn.dataset.filter;render();}));
+$('add-btn').addEventListener('click',()=>openBlock());$('close-modal').addEventListener('click',closeBlock);$('cancel-modal').addEventListener('click',closeBlock);$('modal-backdrop').addEventListener('click',e=>{if(e.target===$('modal-backdrop'))closeBlock();});
+$('block-form').addEventListener('submit',async ev=>{ev.preventDefault();const data={title:$('block-title').value.trim(),day:Number($('block-day').value),start:$('block-start').value,end:$('block-end').value,category:$('block-category').value};const button=$('block-form').querySelector('[type=submit]');button.disabled=true;try{if(state.editing)await request(`/api/blocks/${state.editing}`,{method:'PATCH',body:JSON.stringify(data)});else await request('/api/blocks',{method:'POST',body:JSON.stringify(data)});closeBlock();await refresh();toast('Schedule saved ✳');}catch(err){$('block-error').textContent=err.message;}finally{button.disabled=false;}});
+$('delete-block').addEventListener('click',async()=>{if(!state.editing)return;if(!confirm('Delete this block?'))return;try{await request(`/api/blocks/${state.editing}`,{method:'DELETE'});closeBlock();await refresh();toast('Block removed');}catch(err){$('block-error').textContent=err.message;}});
+$('export').addEventListener('click',async()=>{try{const data=await request('/api/export');const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='between-classes-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Schedule exported');}catch(err){toast(err.message);}});
+function closePassword(){$('password-backdrop').classList.add('hidden');$('password-form').reset();$('password-error').textContent='';}
+$('settings-btn').addEventListener('click',()=>$('password-backdrop').classList.remove('hidden'));
+$('close-password').addEventListener('click',closePassword);$('cancel-password').addEventListener('click',closePassword);$('password-backdrop').addEventListener('click',e=>{if(e.target===$('password-backdrop'))closePassword();});
+$('password-form').addEventListener('submit',async ev=>{ev.preventDefault();try{const pwd=$('new-pass').value;if(pwd.length<12)throw Error('Use at least 12 characters.');const {error}=await db.auth.updateUser({password:pwd});if(error)throw error;closePassword();toast('Password updated');}catch(err){$('password-error').textContent=err.message;}});
+$('starter-btn').addEventListener('click',async()=>{if(state.blocks.length)return;const btn=$('starter-btn');btn.disabled=true;try{const user=await requireUser();const rows=STARTER.map(([day,start,end,title,category])=>({user_id:user.id,day,start_time:start,end_time:end,title,category}));const {error}=await db.from('planner_blocks').insert(rows);if(error)throw Error(error.message);await refresh();toast('Starter timetable loaded. Every block is editable!');}catch(err){toast(err.message);}finally{btn.disabled=false;}});
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeBlock();closePassword();}});
+// Keep the date-based message current even if the tab stays open overnight.
+setInterval(()=>{if(state.user)updateDailyNote();},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.user)updateDailyNote();});
+(async()=>{if(!db){showLogin();$('login-error').textContent='Setup required: add your Supabase project URL and publishable key to config.js.';return;}try{const {data,error}=await db.auth.getSession();if(error)throw error;if(data.session){state.user=data.session.user;await showApp();}else showLogin();}catch(err){showLogin();$('login-error').textContent=err.message;}})();
