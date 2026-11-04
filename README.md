@@ -1,55 +1,37 @@
-# Between Classes ☘️
+# Between Classes — clean replacement (GitHub Pages + Supabase)
 
-A simple, private weekly planner for academics, Pioneers, hobbies and life beyond deadlines.
+A private, editable weekly planner for classes, self-study, Pioneers, hobbies, meals and downtime. Responsive dark interface, email/password login, cloud sync, 77 starter blocks, daily rotating note, weekly completion tracking, export. No Python, Docker, Azure or server hosting.
 
-**Stack:** HTML + CSS + browser JavaScript + Supabase Auth/Postgres. No Python, Docker, Azure VM, or build pipeline. Static hosting on GitHub Pages.
+## Update your existing repository (IMPORTANT)
 
-## What you get
+**Keep the existing `config.js`** in the root of your repository. It has your Supabase URL and public publishable/anon key. This ZIP deliberately contains `config.example.js` instead of `config.js` so you can replace the app without losing your configuration.
 
-- Full weekly timetable, day view, focus/progress view
-- **Every block is editable**, including classes; add, edit, delete, complete
-- Personal timetable starter template (click to load on first sign-in)
-- Progress completion resets each Monday (the history of completion isn't retained)
-- Email/password login; cloud sync across devices; JSON backup export
-- Owner-only database access using PostgreSQL Row Level Security
-
-## One-time setup (about six steps)
-
-1. Create a [Supabase](https://supabase.com/) project. Wait until its database is ready.
-2. In **SQL Editor**, paste and run [`schema.sql`](./schema.sql).
-3. In **Authentication → Users**, create your own user with your email and a strong password (use the dashboard's **Add user** option). You can disable public signups in **Authentication → Providers → Email** if you're the only user. The exact location of this setting may vary as Supabase changes its dashboard.
-4. In **Project Settings / Connect → API**, copy the **Project URL** and **publishable/anon key** into `config.js`. **Never** copy the `service_role` or secret key. The publishable key is designed for browser use; RLS protects the data.
-5. Push the files to your GitHub repository. In **Settings → Pages**, select **Deploy from a branch** → `main` → `/ (root)` → **Save**. GitHub will show your `https://USERNAME.github.io/REPO/` URL.
-6. Open the website, sign in with your Supabase email/password, click **Load my starter timetable**. Each block can be clicked to edit or delete.
-
-**Note:** If your repo currently contains the earlier Python version, replace its old files with this repository's contents. The new website does not use `server.py`, `static/`, `Dockerfile`, or `compose.yaml`.
-
-### Local preview
-
-Static ES modules need an HTTP origin (not `file://`):
+1. Make a backup of the current repo folder if you want. Unzip this archive.
+2. Copy `index.html`, `app.js`, `style.css`, `schema.sql`, `seed.sql`, and optionally `README.md` over the files with the same names in the GitHub repo. **Do not copy an old `daily-note.js` script tag into `index.html`**; the note logic is already in `app.js`.
+3. Leave `config.js` exactly as it was. If it no longer exists, copy `config.example.js` to `config.js` and enter your real Supabase URL and **publishable** key (never a service-role or secret key).
+4. If your Supabase project was configured using the earlier complete `schema.sql`, no database setup change is needed. If the 77 blocks don't appear on your first login, run `schema.sql` once in Supabase SQL Editor (it is intended to be safe to re-run) or run the provided `seed.sql` after setting your login email. **Do not run `seed.sql` if you already have blocks you want to keep**; it deliberately skips nonempty schedules.
+5. Commit and push:
 
 ```bash
-python -m http.server 8000
-```
-
-Open http://localhost:8000. Python here is *only* a convenient local static-file server, not an app backend.
-
-## Security and limitations
-
-- `config.js` is public by design. Your password is **never** put in the repo.
-- RLS policies restrict CRUD to the owner of each row. Never use Supabase service-role or secret keys in a browser.
-- Configure Supabase Auth allowed/site URLs to match your GitHub Pages URL if you enable password recovery or email links. For manual password login, create the account in the Supabase dashboard first.
-- Static hosting remains free subject to GitHub Pages policies. Supabase free tiers have usage caps and may pause inactive projects; this is **not** guaranteed permanent free hosting/storage.
-- Completion toggles reset each Monday. Schedule entries recur weekly; they aren't dated calendar events.
-- New users initially see an empty schedule; starter blocks load only when you click the button so deleting all blocks won't trigger accidental reseeding.
-- Export JSON regularly. This starter does not implement JSON import or multi-user shared schedules.
-
-## Deploy subsequent changes
-
-```bash
-git add .
-git commit -m 'Update planner'
+git add -A
+git commit -m "Restore complete planner with schedule and daily notes"
 git push
 ```
 
-GitHub Pages deploys the latest branch automatically.
+6. Enable GitHub Pages: repository Settings → Pages → Deploy from branch → `main` / `(root)`. Visit `https://YOUR_USERNAME.github.io/between-classes/`. Hard refresh once if an old page is cached.
+
+## First login
+
+Create your account in Supabase Dashboard → Authentication → Users → Add user. The website is intentionally login-only (no public signup). Log in using that email and password. The database function `initialize_my_planner` populates the 77 starting blocks **once per account**, if empty. It never automatically restores intentionally deleted blocks afterward.
+
+## Editing
+
+Click **any** card, including classes, to edit its title, day, time or category. You can delete it. Click `+ Add block` to create one. Mark non-class blocks complete for the current week. Daily note rotates by local calendar date.
+
+## Security and storage
+
+Supabase Auth plus row-level security (RLS) policies restrict planner blocks by user ID. The URL and publishable key are public by design; never put passwords, API secret keys, or a service-role key in Git. Supabase free-tier projects can pause after inactivity. Export your schedule periodically.
+
+## When something goes wrong
+
+The login page now stays visible instead of rendering a completely blank page if a remote JavaScript module cannot load. Check the message on the login page and the browser Console (F12). Confirm `config.js` exists and has named ES exports `SUPABASE_URL` and `SUPABASE_ANON_KEY`. The front end imports only `./config.js` and the Supabase SDK, and all UI files remain static.
